@@ -1872,6 +1872,12 @@ void HWC2On1Adapter::Display::prepareFramebufferTarget() {
 
     auto& hwc1Target = mHwc1RequestedContents->hwLayers[mLayers.size()];
     hwc1Target.compositionType = HWC_FRAMEBUFFER_TARGET;
+    // HWC1 prepare() sees the framebuffer target that was last posted: the
+    // HWC1 SurfaceFlinger never reset its handle, and composers such as the
+    // PowerVR one reject overlay assignment on a NULL handle. set() replaces
+    // it with this frame's client target.
+    hwc1Target.handle = mClientTarget.getBuffer();
+    hwc1Target.acquireFenceFd = -1;
     hwc1Target.releaseFenceFd = -1;
     hwc1Target.hints = 0;
     hwc1Target.flags = 0;
