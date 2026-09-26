@@ -18,6 +18,7 @@
 
 #include "Gnss.h"
 #include <GnssUtils.h>
+#include <thread>
 
 namespace android {
 namespace hardware {
@@ -421,7 +422,24 @@ Return<bool> Gnss::setCallback(const sp<IGnssCallback>& callback)  {
         setSystemInfoCb(&info);
     }
 
-    return (mGnssIface->init(&sGnssCb) == 0);
+    // GnssLocationProvider.native_init calls setCallback() synchronously over
+    // hwbinder. gps.h lets init() block until the vendor driver is ready, and
+    // the tuna SiRF GSD4t driver retries its chip ID handshake for minutes
+    // when the chip does not answer, holding the binder thread past
+    // system_server's watchdog timeout and getting system_server killed and
+    // restarted on every such boot. init() runs on its own detached thread so
+    // setCallback() always returns within one hwbinder call regardless of how
+    // long the vendor driver takes; the driver still reports readiness
+    // through the GpsCallbacks interface whenever init() completes.
+    const GpsInterface* gnssIface = mGnssIface;
+    std::thread([gnssIface]() {
+        int ret = gnssIface->init(&sGnssCb);
+        if (ret != 0) {
+            ALOGE("Gnss::setCallback: GpsInterface::init() failed with %d", ret);
+        }
+    }).detach();
+
+    return true;
 }
 
 Return<bool> Gnss::start()  {
