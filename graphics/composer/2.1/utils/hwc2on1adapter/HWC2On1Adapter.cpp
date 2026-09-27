@@ -23,13 +23,18 @@
 #define ATRACE_TAG ATRACE_TAG_GRAPHICS
 
 
+#include <fcntl.h>
 #include <inttypes.h>
+#include <linux/fb.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include <chrono>
 #include <cstdlib>
 #include <sstream>
 
 #include <hardware/hwcomposer.h>
+#include <cutils/properties.h>
 #include <log/log.h>
 #include <utils/Trace.h>
 
@@ -1108,6 +1113,29 @@ static_assert(attributesMatch<HWC_DISPLAY_DPI_Y>(), "Tables out of sync");
 static_assert(attributesMatch<HWC_DISPLAY_COLOR_TRANSFORM>(),
         "Tables out of sync");
 
+// The scanout period the panel runs at: pixclock (picoseconds per pixel) times
+// the total horizontal and vertical timing of fb0, which the display
+// controller programs. Returns 0 when the timing is unavailable or
+// vendor.hwc.fb_vsync_period is false.
+static int32_t fbVsyncPeriodNs() {
+    if (!property_get_bool("vendor.hwc.fb_vsync_period", true)) {
+        return 0;
+    }
+    int fd = open("/dev/graphics/fb0", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        return 0;
+    }
+    fb_var_screeninfo var = {};
+    int result = ioctl(fd, FBIOGET_VSCREENINFO, &var);
+    close(fd);
+    if (result != 0 || var.pixclock == 0) {
+        return 0;
+    }
+    uint64_t htotal = var.xres + var.left_margin + var.right_margin + var.hsync_len;
+    uint64_t vtotal = var.yres + var.upper_margin + var.lower_margin + var.vsync_len;
+    return static_cast<int32_t>(htotal * vtotal * var.pixclock / 1000);
+}
+
 void HWC2On1Adapter::Display::populateConfigs() {
     std::unique_lock<std::recursive_mutex> lock(mStateMutex);
 
@@ -1142,8 +1170,19 @@ void HWC2On1Adapter::Display::populateConfigs() {
         auto attributeMap = hasColor ?
                 ATTRIBUTE_MAP_WITH_COLOR : ATTRIBUTE_MAP_WITHOUT_COLOR;
 
-        newConfig->setAttribute(Attribute::VsyncPeriod,
-                values[attributeMap[HWC_DISPLAY_VSYNC_PERIOD]]);
+        // An HWC1 composer can report a nominal 60 Hz period while the panel
+        // scans out at the rate its fbdev timing sets; SurfaceFlinger's vsync
+        // model then drifts against the hardware vsync by the difference each
+        // frame. The fb0 period replaces the reported one when both are within
+        // 10 % of each other.
+        int32_t vsyncPeriod = values[attributeMap[HWC_DISPLAY_VSYNC_PERIOD]];
+        int32_t fbPeriod = fbVsyncPeriodNs();
+        if (fbPeriod > 0 && std::abs(fbPeriod - vsyncPeriod) * 10 < vsyncPeriod) {
+            ALOGI("[%" PRIu64 "] config %u: vsync period %d ns from fb0 timing, HWC1 reports %d",
+                  mId, hwc1ConfigId, fbPeriod, vsyncPeriod);
+            vsyncPeriod = fbPeriod;
+        }
+        newConfig->setAttribute(Attribute::VsyncPeriod, vsyncPeriod);
         newConfig->setAttribute(Attribute::Width,
                 values[attributeMap[HWC_DISPLAY_WIDTH]]);
         newConfig->setAttribute(Attribute::Height,
