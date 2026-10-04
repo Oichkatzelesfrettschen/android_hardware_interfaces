@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <sstream>
 
+#include <cutils/properties.h>
 #include <hardware/hwcomposer.h>
 #include <log/log.h>
 #include <utils/Trace.h>
@@ -2267,8 +2268,12 @@ void HWC2On1Adapter::populateCapabilities() {
 
     // Some devices might have HWC1 retire fences that accurately emulate
     // HWC2 present fences when they are deferred, but it's not very reliable.
-    // To be safe, we indicate PresentFenceIsNotReliable for all HWC1 devices.
-    mCapabilities.insert(Capability::PresentFenceIsNotReliable);
+    // To be safe, we indicate PresentFenceIsNotReliable for HWC1 devices,
+    // except where vendor.hwc2on1.retire_fence_is_present declares that
+    // the HWC1 retire fence signals when the frame reaches the panel.
+    if (!property_get_bool("vendor.hwc2on1.retire_fence_is_present", false)) {
+        mCapabilities.insert(Capability::PresentFenceIsNotReliable);
+    }
 }
 
 HWC2On1Adapter::Display* HWC2On1Adapter::getDisplay(hwc2_display_t id) {
