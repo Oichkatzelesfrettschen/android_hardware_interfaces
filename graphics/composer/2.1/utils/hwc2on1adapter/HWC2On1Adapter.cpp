@@ -828,6 +828,16 @@ Error HWC2On1Adapter::Display::setActiveConfig(hwc2_config_t configId) {
                 intError);
             return Error::BadConfig;
         }
+        // Retained targets describe the active configuration's buffer geometry.
+        // A successful size change requires SurfaceFlinger's replacement target.
+        if (mActiveConfig &&
+                (mActiveConfig->getAttribute(Attribute::Width) !=
+                        config->getAttribute(Attribute::Width) ||
+                 mActiveConfig->getAttribute(Attribute::Height) !=
+                        config->getAttribute(Attribute::Height))) {
+            mClientTarget.setBuffer(nullptr);
+            mClientTarget.setFence(-1);
+        }
         mActiveConfig = config;
     }
 
