@@ -1872,6 +1872,10 @@ void HWC2On1Adapter::Display::prepareFramebufferTarget() {
 
     auto& hwc1Target = mHwc1RequestedContents->hwLayers[mLayers.size()];
     hwc1Target.compositionType = HWC_FRAMEBUFFER_TARGET;
+    // HWC1 overlay assignment requires the previously posted client buffer.
+    // set() installs the incoming client target and its acquire fence after
+    // prepare() chooses composition; prepare() only borrows the buffer handle.
+    hwc1Target.handle = mClientTarget.getBuffer();
     hwc1Target.releaseFenceFd = -1;
     hwc1Target.hints = 0;
     hwc1Target.flags = 0;
