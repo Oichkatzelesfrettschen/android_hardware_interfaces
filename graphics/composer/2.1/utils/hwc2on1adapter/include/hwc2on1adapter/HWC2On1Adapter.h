@@ -52,6 +52,9 @@ public:
 
     struct hwc_composer_device_1* getHwc1Device() const { return mHwc1Device; }
     uint8_t getHwc1MinorVersion() const { return mHwc1MinorVersion; }
+    bool getHwc1PrepareNeedsClientTarget() const {
+        return mHwc1PrepareNeedsClientTarget;
+    }
 
 private:
     static inline HWC2On1Adapter* getAdapter(hwc2_device_t* device) {
@@ -691,6 +694,7 @@ private:
     const uint8_t mHwc1MinorVersion;
     bool mHwc1SupportsVirtualDisplays;
     bool mHwc1SupportsBackgroundColor;
+    bool mHwc1PrepareNeedsClientTarget;
 
     class Callbacks;
     const std::unique_ptr<Callbacks> mHwc1Callbacks;
