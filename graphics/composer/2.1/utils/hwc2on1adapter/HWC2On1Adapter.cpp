@@ -97,6 +97,7 @@ HWC2On1Adapter::HWC2On1Adapter(hwc_composer_device_1_t* hwc1Device)
     mHwc1MinorVersion(getMinorVersion(hwc1Device)),
     mHwc1SupportsVirtualDisplays(false),
     mHwc1SupportsBackgroundColor(false),
+    mHwc1PrepareNeedsClientTarget(false),
     mHwc1Callbacks(std::make_unique<Callbacks>(*this)),
     mCapabilities(),
     mLayers(),
@@ -1873,6 +1874,13 @@ void HWC2On1Adapter::Display::prepareFramebufferTarget() {
 
     auto& hwc1Target = mHwc1RequestedContents->hwLayers[mLayers.size()];
     hwc1Target.compositionType = HWC_FRAMEBUFFER_TARGET;
+    if (mDevice.getHwc1PrepareNeedsClientTarget()) {
+        // This HWC1 rejects a framebuffer target with a NULL handle at
+        // prepare; set() installs the incoming client target and its
+        // acquire fence afterward, so prepare exposes the previously
+        // posted buffer.
+        hwc1Target.handle = mClientTarget.getBuffer();
+    }
     hwc1Target.releaseFenceFd = -1;
     hwc1Target.hints = 0;
     hwc1Target.flags = 0;
@@ -2274,6 +2282,11 @@ void HWC2On1Adapter::populateCapabilities() {
     if (!property_get_bool("vendor.hwc2on1.retire_fence_is_present", false)) {
         mCapabilities.insert(Capability::PresentFenceIsNotReliable);
     }
+
+    // The property declares that the HWC1 prepare call needs the handle of
+    // the framebuffer target; it stays off for every other HWC1.
+    mHwc1PrepareNeedsClientTarget =
+            property_get_bool("vendor.hwc2on1.prepare_needs_client_target", false);
 }
 
 HWC2On1Adapter::Display* HWC2On1Adapter::getDisplay(hwc2_display_t id) {
